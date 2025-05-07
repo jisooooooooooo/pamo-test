@@ -7,6 +7,13 @@ from motion_detector import MotionDetector
 from starlette.websockets import WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+MOTION_MAP = {
+    "손을 위로 들기": {"id": "raise_hand", "label": "손을 위로 들기"},
+    "손을 좌우로 흔들기": {"id": "wave_hand", "label": "손을 좌우로 흔들기"},
+    "손을 앞으로 뻗기": {"id": "push_hand", "label": "손을 앞으로 뻗기"},
+    "고개 좌우로 흔들기": {"id": "shake_head", "label": "고개 좌우로 흔들기"},
+}
+
 app = FastAPI()
 
 app.add_middleware(
@@ -36,12 +43,17 @@ async def websocket_endpoint(websocket: WebSocket):
             current_motions = detector.detect(frame_rgb)
             new_motions = current_motions - prev_motions
             if new_motions:
+                motion_list = []
+                for motion in new_motions:
+                    if motion in MOTION_MAP:
+                        motion_list.append(MOTION_MAP[motion])
+
                 motion_message = {
                     "type": "motion",
-                    "data": list(new_motions)
+                    "motions": motion_list
                 }
                 try:
-                    await websocket.send_text(json.dumps(motion_message))
+                    await websocket.send_text(json.dumps(motion_message, ensure_ascii=False))
                 except WebSocketDisconnect:
                     print("클라이언트가 연결을 끊음 (motion)")
                     break

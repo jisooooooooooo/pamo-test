@@ -1,32 +1,65 @@
 import cv2
-from camera import Camera
+import asyncio
+import base64
+import json
+from fastapi import FastAPI, WebSocket
 from motion_detector import MotionDetector
+from starlette.websockets import WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 
-def main():
-    camera = Camera()
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    camera = cv2.VideoCapture(0)
     detector = MotionDetector()
     prev_motions = set()
 
-    while True:
-        success, frame = camera.read()
-        if not success:
-            continue
+    try:
+        while True:
+            ret, frame = camera.read()
+            if not ret:
+                await asyncio.sleep(0.05)
+                continue
 
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        current_motions = detector.detect(frame_rgb)
+            # 감지 처리
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            current_motions = detector.detect(frame_rgb)
+            new_motions = current_motions - prev_motions
+            if new_motions:
+                motion_message = {
+                    "type": "motion",
+                    "data": list(new_motions)
+                }
+                try:
+                    await websocket.send_text(json.dumps(motion_message))
+                except WebSocketDisconnect:
+                    print("클라이언트가 연결을 끊음 (motion)")
+                    break
 
-        new_motions = current_motions - prev_motions
-        if new_motions:
-            print("감지된 모션:", ", ".join(new_motions))
-        prev_motions = current_motions.copy()
+                prev_motions = current_motions.copy()
 
-        frame = cv2.flip(frame, 1)
-        cv2.imshow('Motion Detection', frame)
-        if cv2.waitKey(5) & 0xFF == 27:
-            break
+            frame = cv2.flip(frame, 1)
+            _, buffer = cv2.imencode('.jpg', frame)
 
-    camera.release()
-    cv2.destroyAllWindows()
+            try:
+                await websocket.send_bytes(buffer.tobytes())
+            except WebSocketDisconnect:
+                print("클라이언트가 연결을 끊음 (frame)")
+                break
 
-if __name__ == "__main__":
-    main()
+            await asyncio.sleep(0.05)
+
+    except WebSocketDisconnect:
+        print("클라이언트 연결 해제됨")
+    finally:
+        camera.release()

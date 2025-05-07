@@ -4,12 +4,15 @@ import math
 
 class MotionDetector:
     def __init__(self):
+        # 손 감지 초기화
         self.mp_hands = mp.solutions.hands
         self.hands = self.mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.8)
 
+        # 얼굴 감지 초기화
         self.mp_face = mp.solutions.face_mesh
         self.face = self.mp_face.FaceMesh(min_detection_confidence=0.7)
 
+        # 감지 변수
         self.x_history = []
         self.nose_x_history = []
         self.direction_history = []
@@ -38,6 +41,11 @@ class MotionDetector:
                 if len(self.x_history) == 10:
                     if max(self.x_history) - min(self.x_history) > 0.3:
                         current_motions.add("손을 좌우로 흔들기")
+
+                # 손을 앞으로 뻗기
+                distance = self.calculate_distance(wrist, index_tip)
+                if distance > 0.3:
+                    current_motions.add("손을 앞으로 뻗기")
         else:
             self.x_history = []
 
